@@ -30,6 +30,7 @@ from datetime import datetime
 import requests
 import six
 import six.moves.urllib.parse as urlparse
+from urllib3.exceptions import HTTPError
 
 from .auth import JWT, Auth, AccessRequest
 from .error import BatchError, UnavailableError, ClientError, RequestError, ServerError, ArgumentError
@@ -485,13 +486,18 @@ class Connection:
             # Catch exception not accounted for and allow to retry with a cooldown period (different from timeout)
             # This is helpful in the case of connection issues which may throw unhandled exceptions despite resolving
             # themselves in a short time.  Catching general exception several times gives some leeway in such cases
-            except (ConnectionError, ConnectionResetError, ConnectionAbortedError, ConnectionRefusedError) as e:
+            except (ConnectionError,
+                    ConnectionResetError,
+                    ConnectionAbortedError,
+                    ConnectionRefusedError,
+                    HTTPError) as e:
                 if num_attempts == self.retry_max_attempts:
                     raise e
                 if self.logger: self.logger.warning("Unexpected failure, try " + str(num_attempts + 1) + "/"
                                                     + str(self.retry_max_attempts) + " in "
                                                     + str(self.retry_cooldown) + " seconds... "
-                                                    + "Exception message: " + str(e))
+                                                    + "Exception: "
+                                                    + type(e).__name__ + ": { " + str(e) + " }")
                 # Sleep for specified time to wait for network
                 sleep(self.retry_cooldown)
 
