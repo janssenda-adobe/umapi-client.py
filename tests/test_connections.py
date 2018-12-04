@@ -27,6 +27,7 @@ import requests
 import six
 
 from conftest import mock_connection_params, MockResponse
+from urllib3.exceptions import ProtocolError
 
 from umapi_client import Connection
 from umapi_client import ArgumentError, UnavailableError, ServerError, RequestError
@@ -465,7 +466,7 @@ def test_split_group_action():
 def test_raise_unhandled(log_stream):
     with mock.patch("umapi_client.connection.requests.Session.get") as mock_get:
         mock_get.return_value = MockResponse(200, body=["test", "body"])
-        mock_get.side_effect = ConnectionRefusedError('Arbitrary Unhandled!')
+        mock_get.side_effect = ProtocolError('Arbitrary Unhandled!')
 
         stream, logger = log_stream
         params = dict(mock_connection_params)
@@ -480,8 +481,8 @@ def test_raise_unhandled(log_stream):
 
         stream.flush()
         log = stream.getvalue()  # save as a local so can do pytest -l to see exact log
-        assert log == """Unexpected failure, try 2/3 in 5 seconds... Exception message: Arbitrary Unhandled!
-Unexpected failure, try 3/3 in 5 seconds... Exception message: Arbitrary Unhandled!
+        assert log == """Unexpected failure, try 2/3 in 5 seconds... Exception: ProtocolError: { Arbitrary Unhandled! }
+Unexpected failure, try 3/3 in 5 seconds... Exception: ProtocolError: { Arbitrary Unhandled! }
 """
 
 def test_raise_requesterror():
