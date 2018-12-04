@@ -87,7 +87,7 @@ def test_delete_success():
         response_session = requests.session().delete("")
         assert resp_session_manager == response_session
 
-def test_update_session():
+def test_update_session_force():
 
     params = dict(mock_connection_params)
     params['connection_pooling'] = True
@@ -97,25 +97,27 @@ def test_update_session():
     initialized = conn.session_manager.session_initialized 
 
     time.sleep(1)
-    conn.session_manager.renew_session()
+    conn.session_manager.try_renew_session(force=True)
 
     assert session_start != conn.session_manager.session
     assert initialized != conn.session_manager.session_initialized 
 
-def test_validate_session():
+def test_update_session():
 
     params = dict(mock_connection_params)
     params['connection_pooling'] = True
     conn = Connection(**params)
 
     session_start = conn.session_manager.session
-    conn.session_manager.validate_session()
+    conn.session_manager.try_renew_session()
     assert session_start == conn.session_manager.session
 
-    conn.session_manager.session_max_initialized = 4
+    conn.session_manager.session_max_age = 4
     time.sleep(5)
-    conn.session_manager.validate_session()
+    conn.session_manager.try_renew_session()
     assert session_start != conn.session_manager.session
+
+
 
 
 

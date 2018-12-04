@@ -151,11 +151,7 @@ class Connection:
         else:
             raise ArgumentError("Connector create: either auth (an Auth object) or auth_dict (a dict) is required")
 
-        ua_string = "umapi-client/" + umapi_version + " Python/" + python_version() + " (" + platform_version() + ")"
-        if user_agent and user_agent.strip():
-            ua_string = user_agent.strip() + " " + ua_string
-
-        self.session_manager = SessionManager(ua_string, self.connection_pooling, self.session_max_age, self.log_endpoint_ip, self.auth, self.timeout)
+        self.session_manager = SessionManager(user_agent, self.connection_pooling, self.session_max_age, self.log_endpoint_ip, self.auth, self.timeout)
 
     def _get_auth(self, ims_host, ims_endpoint_jwt,
                   tech_acct_id=None, api_key=None, client_secret=None,
@@ -499,9 +495,8 @@ class Connection:
                 # Sleep for specified time to wait for network
                 sleep(self.retry_cooldown)
 
-                # Request a new session for the next try in case issue tied to session
-                if self.connection_pooling:
-                    self.session_manager.renew_session()
+                # Force renew session
+                self.session_manager.try_renew_session(force=True)
 
                 # Skip remainder of loop and continue after cooldown
                 continue
@@ -541,71 +536,64 @@ class SessionManager:
         self.logger = logging.getLogger("umapi - SessionManager")
         self.connection_pooling = connection_pooling
         self.session_max_age = session_max_age
-        self.renew_session()
         self.request_params = {
             'timeout': timeout,
             'auth': auth,
         }
 
         if self.log_endpoint_ip: self.request_params['stream'] = True
+        self.ua_string = "umapi-client/" + umapi_version \
+                         + " Python/" + python_version() \
+                         + " (" + platform_version() + ")"
 
+        if user_agent and user_agent.strip():
+            self.ua_string = user_agent.strip() + " " + self.ua_string
+
+        self.try_renew_session(force=True)
     # get, post and delete are pass through methods which make the desired call using the
     # request_handler.  Allows to abstract the kind of call and reduces the needed methods
     # from 6 to 3.  Each call includes session validation as a first step.
     def get(self, url):
-        self.validate_session()
+        self.try_renew_session()
         return self.log_ip_from_response(self.session.get(url, **self.request_params))
 
     def post(self, url, data):
-        self.validate_session()
+        self.try_renew_session()
         return self.log_ip_from_response(self.session.post(url, data=data, **self.request_params))
 
     def delete(self, url):
-        self.validate_session()
+        self.try_renew_session()
         return self.log_ip_from_response(self.session.delete(url, **self.request_params))
 
-    def renew_session(self):
+    def try_renew_session(self,force=False):
         """
         Closes and removes the existing session from memory
         Creates a fresh session object and adds the UA headers
         """
-        session = requests.Session()
-        session.headers.update({'User-Agent': self.user_agent})
-        self.session_initialized = datetime.now()
-        self.session_count += 1
+        if force == True or self.connection_pooling == False or self.is_expired():
 
-        if self.logger: self.logger.debug(
-            "Session #" + str(self.session_count) + " created @ " + str(self.session_initialized))
+            session = requests.Session()
+            session.headers.update({'User-Agent': self.ua_string})
+            self.session_initialized = datetime.now()
+            self.session_count += 1
+    
+            if self.logger: self.logger.debug(
+                "Session #" + str(self.session_count) + " created @ " + str(self.session_initialized))
+            try:
+                self.session.close()
+                if self.logger: self.logger.debug("Closed session #" + str(self.session_count - 1))
+            except Exception as e:
+                if self.logger: self.logger.debug("Failed to close session #"
+                                                  + str(self.session_count -1)
+                                                  + " - reason: "
+                                                  + str(e))
+            self.session = session
 
-        try:
-            self.session.close()
-            if self.logger: self.logger.debug("Closed session #" + str(self.session_count - 1))
-        except Exception as e:
-            if self.logger: self.logger.debug("Failed to close session #"
-                                              + str(self.session_count -1)
-                                              + " - reason: "
-                                              + str(e))
-
-        self.session = session
-
-
-    def validate_session(self):
-        """
-         When connection pooling is enabled, validate_session will rebuild the session if expired.
-         For cases where pooling is disabled, this method does nothing.
-        """
-        if self.connection_pooling:
-            session_age = (datetime.now() - self.session_initialized).seconds
-            if self.logger: self.logger.debug("Session age: " + str(session_age))
-
-            if session_age > self.session_max_age:
-                if self.logger: self.logger.debug(
-                    "Session expired after " + str(session_age) + " seconds... starting new session")
-                self.renew_session()
-        # Create a new session every request
-        else:
-            self.renew_session()
-
+    def is_expired(self):
+        session_age = (datetime.now() - self.session_initialized).seconds
+        expired = session_age >= self.session_max_age
+        if self.logger and expired: self.logger.debug("Session expired after " + str(session_age) + " seconds... ")
+        return expired
 
     def log_ip_from_response(self, rsp):
         """
