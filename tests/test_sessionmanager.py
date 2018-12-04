@@ -40,15 +40,15 @@ def test_set_connection_pooling():
         params['connection_pooling'] = True
 
         conn = Connection(**params)
-        initial_session = conn.session_manager.session_count
+        session_start = conn.session_manager.session
         conn.session_manager.get("")
-        assert initial_session == conn.session_manager.session_count
+        assert session_start == conn.session_manager.session
 
         params['connection_pooling'] = False
         conn = Connection(**params)
-        initial_session = conn.session_manager.session_count
+        session_start = conn.session_manager
         conn.session_manager.get("")
-        assert initial_session != conn.session_manager.session_count
+        assert session_start != conn.session_manager.session
 
 
 def test_get_success():
@@ -93,14 +93,14 @@ def test_update_session():
     params['connection_pooling'] = True
     conn = Connection(**params)
 
-    session_count = conn.session_manager.session_count
-    age = conn.session_manager.session_initialized
+    session_start = conn.session_manager.session
+    initialized = conn.session_manager.session_initialized 
 
     time.sleep(1)
     conn.session_manager.renew_session()
 
-    assert session_count != conn.session_manager.session_count
-    assert age != conn.session_manager.session_initialized
+    assert session_start != conn.session_manager.session
+    assert initialized != conn.session_manager.session_initialized 
 
 def test_validate_session():
 
@@ -108,14 +108,14 @@ def test_validate_session():
     params['connection_pooling'] = True
     conn = Connection(**params)
 
-    original_session = conn.session_manager.session_count
+    session_start = conn.session_manager.session
     conn.session_manager.validate_session()
-    assert original_session == conn.session_manager.session_count
+    assert session_start == conn.session_manager.session
 
-    conn.session_manager.session_max_age = 4
+    conn.session_manager.session_max_initialized = 4
     time.sleep(5)
     conn.session_manager.validate_session()
-    assert  original_session != conn.session_manager.session_count
+    assert session_start != conn.session_manager.session
 
 
 
