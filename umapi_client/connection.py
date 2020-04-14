@@ -144,6 +144,7 @@ class Connection:
         if user_agent and user_agent.strip():
             ua_string = user_agent.strip() + " " + ua_string
         self.session.headers["User-Agent"] = ua_string
+        self.logger.debug("Session headers: " + str(self.session.headers))
 
     def _get_auth(self, ims_host, ims_endpoint_jwt,
                   tech_acct_id=None, api_key=None, client_secret=None,
@@ -256,7 +257,7 @@ class Connection:
         elif object_type == "user-group":
             query_path = "/{}/user-groups".format(self.org_id)
             if url_params: query_path += "/" + "/".join([urlparse.quote(c) for c in url_params])
-            query_path += "?page={:d}".format(page+1)
+            query_path += "?page={:d}".format(page + 1)
             if query_params: query_path += "&" + urlparse.urlencode(query_params)
         else:
             raise ArgumentError("Unknown query object type ({}): must be 'user' or 'group'".format(object_type))
@@ -442,7 +443,11 @@ class Connection:
         for num_attempts in range(1, self.retry_max_attempts + 1):
             try:
                 result = call()
-                if result.status_code in [200,201,204]:
+                sub_headers = {h: result.headers[h] for h in result.headers if 'x-' in h.lower()}
+                sub_headers['date'] = result.headers.get('date')
+                sub_headers['status_code'] = result.status_code
+                self.logger.debug("Response headers: " + str(sub_headers))
+                if result.status_code in [200, 201, 204]:
                     return result
                 elif result.status_code in [429, 502, 503, 504]:
                     if self.logger: self.logger.warning("UMAPI timeout...service unavailable (code %d on try %d)",
